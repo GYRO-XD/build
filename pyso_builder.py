@@ -1,104 +1,103 @@
 #!/usr/bin/env python3
 """
-PYSOBuilder - Python to .so Compiler
-Compiles Python scripts to .cpython-310.so / .cpython-311.so
-Author: GYRO-XD
-GitHub: https://github.com/GYRO-XD/pyso-builder
+PYSOBuilder v2.0 - Python to .so Compiler
+Error-Free Compilation Tool for Termux
+GitHub: GYRO-XD/pyso-builder
 """
 
 import os
 import sys
 import subprocess
 import shutil
+import argparse
 import platform
 import tempfile
+import json
 from pathlib import Path
-import argparse
+from datetime import datetime
 
 class PYSOBuilder:
-    """Main compiler class - Error-Free Version"""
-    
     def __init__(self):
         self.version = "2.0.0"
         self.author = "GYRO-XD"
-        self.python_version = self._get_python_version()
-        self.termux = self._is_termux()
+        self.python_version = self.get_python_version()
         
-    def _get_python_version(self):
+    def get_python_version(self):
         """Get Python version (e.g., 310, 311)"""
         return f"{sys.version_info.major}{sys.version_info.minor}"
     
-    def _is_termux(self):
-        """Check if running in Termux"""
-        return 'TERMUX_VERSION' in os.environ or 'com.termux' in os.getenv('PREFIX', '')
-    
-    def _setup_environment(self):
-        """Setup environment for compilation"""
-        if self.termux:
-            # Termux specific paths
-            python_path = f"/data/data/com.termux/files/usr/include/python3.{self.python_version[1:]}"
-            if os.path.exists(python_path):
-                os.environ['CFLAGS'] = f"-I{python_path}"
-                os.environ['LDFLAGS'] = f"-L/data/data/com.termux/files/usr/lib"
-            os.environ['CC'] = 'clang'
-            os.environ['CXX'] = 'clang++'
-            
-    def check_requirements(self):
-        """Check and install requirements"""
-        required = ['cython', 'setuptools']
-        missing = []
+    def check_environment(self):
+        """Check and prepare compilation environment"""
+        errors = []
         
-        for req in required:
-            try:
-                __import__(req)
-            except ImportError:
-                missing.append(req)
+        # Check Python headers
+        python_include = f"/data/data/com.termux/files/usr/include/python3.{self.python_version[0]}" if 'TERMUX' in os.environ.get('TERMUX_VERSION', '') else None
         
-        if missing:
-            print(f"📦 Installing: {', '.join(missing)}")
-            for req in missing:
-                subprocess.run([sys.executable, "-m", "pip", "install", req], 
-                             capture_output=True, check=False)
-            print("✅ Requirements installed!")
+        if 'TERMUX' in os.environ.get('TERMUX_VERSION', ''):
+            if not os.path.exists(python_include):
+                print("📦 Installing Python development headers...")
+                os.system("pkg install python-dev -y")
+        
+        # Install Cython if missing
+        try:
+            import Cython
+            print(f"✅ Cython {Cython.__version__} found")
+        except ImportError:
+            print("📦 Installing Cython...")
+            os.system(f"{sys.executable} -m pip install cython setuptools wheel --quiet")
+        
         return True
     
-    def compile(self, script_path, output_name=None, optimize=3, verbose=False):
-        """Main compile function - ERROR FREE"""
-        
-        # Validate input
-        if not os.path.exists(script_path):
-            print(f"❌ File not found: {script_path}")
-            return False
-        
-        # Setup environment
-        self._setup_environment()
-        
-        # Check requirements
-        if not self.check_requirements():
-            return False
-        
-        # Get script info
-        script_name = Path(script_path).stem
-        output_name = output_name or script_name
+    def detect_platform(self):
+        """Detect platform for naming"""
+        system = platform.system().lower()
+        arch = platform.machine().lower()
+        return f"{system}_{arch}"
+    
+    def compile_script(self, script_path, output_name=None, optimize=3, verbose=False):
+        """Compile Python script to .so with error handling"""
         
         print(f"\n🔐 PYSOBuilder v{self.version}")
-        print(f"📄 Input: {script_path}")
-        print(f"🐍 Python: {self.python_version}")
-        print(f"📱 Platform: {'Termux' if self.termux else 'Linux'}")
         print("=" * 50)
         
-        # Create temporary setup.py
-        setup_content = f"""from setuptools import setup
+        # Check if script exists
+        script_path = Path(script_path)
+        if not script_path.exists():
+            print(f"❌ Error: '{script_path}' not found!")
+            return None
+        
+        print(f"📄 Input: {script_path}")
+        print(f"🐍 Python: {self.python_version}")
+        print(f"💻 Platform: {self.detect_platform()}")
+        print("=" * 50)
+        
+        # Prepare environment
+        self.check_environment()
+        
+        # Get base name
+        base_name = script_path.stem if output_name is None else output_name
+        
+        # Create setup.py
+        setup_code = f'''from setuptools import setup
 from Cython.Build import cythonize
+import sys
+import os
+
+# Set compiler flags for Termux
+if 'TERMUX_VERSION' in os.environ:
+    os.environ['CFLAGS'] = '-I/data/data/com.termux/files/usr/include/python3.{self.python_version[0]}'
+    os.environ['LDFLAGS'] = '-L/data/data/com.termux/files/usr/lib'
 
 setup(
-    name="{output_name}",
+    name="{base_name}",
     ext_modules=cythonize(
-        "{script_path}",
+        "{script_path.name}",
         compiler_directives={{
             'language_level': 3,
             'boundscheck': False,
             'wraparound': False,
+            'initializedcheck': False,
+            'cdivision': True,
         }}
     ),
     options={{
@@ -108,108 +107,153 @@ setup(
         }}
     }}
 )
-"""
+'''
         
         # Write setup file
-        temp_dir = tempfile.mkdtemp()
-        setup_path = Path(temp_dir) / "setup.py"
-        with open(setup_path, 'w') as f:
-            f.write(setup_content)
+        setup_path = Path("setup_temp.py")
+        with open(setup_path, "w") as f:
+            f.write(setup_code)
         
-        # Change to temp directory
-        original_dir = os.getcwd()
-        os.chdir(temp_dir)
-        
-        # Copy script to temp
-        shutil.copy(original_dir + "/" + script_path, temp_dir)
-        
+        # Compile
+        print("\n🔨 Compiling...")
         try:
-            # Build
-            cmd = [sys.executable, "setup.py", "build_ext", "--inplace"]
-            if verbose:
-                result = subprocess.run(cmd, capture_output=False)
-            else:
-                result = subprocess.run(cmd, capture_output=True, text=True)
+            # Run compilation with error capture
+            env = os.environ.copy()
+            if 'TERMUX_VERSION' in env:
+                env['CC'] = 'clang'
+                env['CXX'] = 'clang++'
             
-            # Find .so file
-            so_files = list(Path(temp_dir).glob("*.so"))
+            result = subprocess.run(
+                [sys.executable, str(setup_path), "build_ext", "--inplace"],
+                capture_output=True,
+                text=True,
+                env=env
+            )
+            
+            if verbose:
+                if result.stdout:
+                    print(result.stdout)
+                if result.stderr:
+                    print("⚠️ Compiler warnings:")
+                    print(result.stderr)
+            
+            # Cleanup
+            if setup_path.exists():
+                setup_path.unlink()
+            
+            # Remove build directory
+            if Path("build").exists():
+                shutil.rmtree("build")
+            
+            # Find generated .so file
+            so_files = list(Path(".").glob(f"{base_name}*.so")) + list(Path(".").glob("*.so"))
+            
+            # Filter out Python files
+            so_files = [f for f in so_files if f.name != "setup_temp.py"]
             
             if so_files:
-                so_file = so_files[0]
-                target_name = f"{output_name}.cpython-{self.python_version}.so"
-                target_path = Path(original_dir) / target_name
+                # Get the most recent .so file
+                so_file = max(so_files, key=lambda f: f.stat().st_mtime)
                 
-                # Copy to original directory
-                shutil.copy(str(so_file), str(target_path))
+                # Rename to standard format
+                final_name = f"{base_name}.cpython-{self.python_version}.so"
+                shutil.move(str(so_file), final_name)
                 
-                # Get file info
-                size = target_path.stat().st_size
+                size = Path(final_name).stat().st_size
                 
                 print("\n" + "=" * 50)
                 print("✅ COMPILATION SUCCESSFUL!")
                 print("=" * 50)
-                print(f"📁 Output: {target_name}")
+                print(f"📁 Output: {final_name}")
                 print(f"📊 Size: {size / 1024:.2f} KB")
-                print(f"🔢 Python: {self.python_version}")
                 print("=" * 50)
                 
-                # Test import
-                self._test_import(target_path, original_dir)
-                
-                os.chdir(original_dir)
-                shutil.rmtree(temp_dir)
-                return target_path
-            else:
-                print("\n❌ Compilation failed!")
-                if not verbose and result:
-                    print(result.stderr)
-                os.chdir(original_dir)
-                shutil.rmtree(temp_dir)
-                return False
-                
+                return final_name
+            
+            # Check for .pyc or other files
+            print("\n❌ Compilation failed - no .so file generated")
+            if result.stderr:
+                print("\nError details:")
+                print(result.stderr)
+            return None
+            
         except Exception as e:
-            print(f"❌ Error: {e}")
-            os.chdir(original_dir)
-            shutil.rmtree(temp_dir)
-            return False
+            print(f"\n❌ Error: {e}")
+            if setup_path.exists():
+                setup_path.unlink()
+            return None
     
-    def _test_import(self, so_path, original_dir):
-        """Test import the compiled .so"""
-        try:
-            # Add to path
-            sys.path.insert(0, str(original_dir))
-            module_name = Path(so_path).stem.split('.')[0]
-            
-            # Try import
-            module = __import__(module_name)
-            print(f"🧪 Import test: ✅ SUCCESS")
-            
-            # List functions
-            funcs = [f for f in dir(module) if not f.startswith('_')]
-            if funcs:
-                print(f"📦 Functions: {', '.join(funcs[:5])}")
-            return True
-        except Exception as e:
-            print(f"🧪 Import test: ⚠️ Failed ({e})")
-            return False
+    def batch_compile(self, scripts, output_dir="compiled"):
+        """Batch compile multiple scripts"""
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        results = []
+        for script in scripts:
+            print(f"\n📄 Compiling: {script}")
+            so_file = self.compile_script(script)
+            if so_file:
+                target = output_path / Path(so_file).name
+                shutil.move(so_file, target)
+                results.append({"script": script, "output": str(target), "status": "success"})
+            else:
+                results.append({"script": script, "output": None, "status": "failed"})
+        
+        return results
 
 def main():
-    parser = argparse.ArgumentParser(description='PYSOBuilder - Error-Free Python to .so Compiler')
-    parser.add_argument('script', help='Python script to compile')
-    parser.add_argument('-o', '--output', help='Output name (without extension)')
-    parser.add_argument('-O', '--optimize', type=int, default=3, choices=[0,1,2,3],
-                       help='Optimization level (0-3, default: 3)')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    parser = argparse.ArgumentParser(
+        description='PYSOBuilder - Python to .so Compiler',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument(
+        'script',
+        help='Python script to compile'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        help='Output name (without extension)'
+    )
+    
+    parser.add_argument(
+        '-O', '--optimize',
+        type=int,
+        default=3,
+        choices=[0, 1, 2, 3],
+        help='Optimization level (0-3, default: 3)'
+    )
+    
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Verbose output'
+    )
+    
+    parser.add_argument(
+        '-b', '--batch',
+        nargs='*',
+        help='Batch compile multiple files'
+    )
     
     args = parser.parse_args()
     
     builder = PYSOBuilder()
-    result = builder.compile(args.script, args.output, args.optimize, args.verbose)
     
-    if result:
-        sys.exit(0)
+    if args.batch:
+        # Batch compile
+        results = builder.batch_compile(args.batch)
+        print("\n" + "=" * 50)
+        print("📊 BATCH SUMMARY")
+        print("=" * 50)
+        success = sum(1 for r in results if r['status'] == 'success')
+        print(f"✅ Success: {success}")
+        print(f"❌ Failed: {len(results) - success}")
     else:
-        sys.exit(1)
+        # Single file
+        builder.compile_script(args.script, args.output, args.optimize, args.verbose)
 
 if __name__ == "__main__":
     main()
