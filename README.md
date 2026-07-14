@@ -21,16 +21,16 @@
 
 ### Quick Install
 ```bash
-git clone https://github.com/GYRO-XD/pyso-builder.git
-cd pyso-builder
+git clone https://github.com/GYRO-XD/build.git
+cd build
 chmod +x builder.sh
 ./builder.sh
 ```
 
 
 ### Clone the repository
-git clone https://github.com/GYRO-XD/pyso-builder.git
-cd pyso-builder
+git clone https://github.com/GYRO-XD/build.git
+cd build
 
 ### Install dependencies
 pip install -r requirements.txt
