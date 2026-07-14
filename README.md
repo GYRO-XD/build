@@ -28,15 +28,18 @@ chmod +x builder.sh
 ```
 
 
-### Clone the repository
-```git clone https://github.com/GYRO-XD/build.git
+# Clone the repository
+```
+git clone https://github.com/GYRO-XD/build.git
 cd build
 ```
 
-### Install dependencies
-```pip install -r requirements.txt 
+# Install dependencies
+```
+pip install -r requirements.txt
 ```
 
-### Use the tool
-```python pyso_builder.py your_script.py 
+# Use the tool
+```
+python pyso_builder.py your_script.py
 ```
