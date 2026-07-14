@@ -1,33 +1,37 @@
-from setuptools import setup, find_packages
+#!/usr/bin/env python3
+"""
+setup_gyro.py - Complete one-time setup
+Creates everything needed for GYRO-Secure
+"""
 
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
+import os
+import sys
+import subprocess
+from pathlib import Path
 
-setup(
-    name="pyso-builder",
-    version="1.0.0",
-    author="GYRO-XD",
-    author_email="gyro.xd@proton.me",
-    description="Professional Python to .so Compiler Tool",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/GYRO-XD/pyso-builder",
-    packages=find_packages(),
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
-        "Development Status :: 5 - Production/Stable",
-        "Intended Audience :: Developers",
-    ],
-    python_requires=">=3.8",
-    install_requires=[
-        "cython>=0.29.0",
-        "setuptools>=45.0.0",
-    ],
-    entry_points={
-        "console_scripts": [
-            "pyso=pyso_builder:main",
-        ],
-    },
-)
+def setup():
+    print("🔧 Setting up GYRO-Secure...")
+    
+    # Check Python
+    print(f"🐍 Python: {sys.version.split()[0]}")
+    
+    # Install dependencies
+    print("📦 Installing dependencies...")
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install", 
+        "cython", "setuptools", "requests", 
+        "beautifulsoup4", "rich", "--quiet"
+    ])
+    
+    # Check for Termux
+    if 'TERMUX_VERSION' in os.environ:
+        print("📦 Installing Termux packages...")
+        subprocess.check_call(["pkg", "install", "python-dev", "clang", "-y"])
+    
+    print("✅ Setup complete!")
+    print("\nNow run:")
+    print("  python pyso_builder.py gyro_secure.py")
+    print("  python gyro_secure.py")
+
+if __name__ == "__main__":
+    setup()
